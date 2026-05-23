@@ -1,0 +1,108 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: knowhub
+
+  # MySQL
+  datasource:
+    url: jdbc:mysql://localhost:3306/knowhub_mysql?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: knowhub
+    password: knowhub123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # PostgreSQL（Spring AI 的 pgvector 会用这个）
+  datasource-vector:
+    url: jdbc:postgresql://localhost:5432/knowhub_vector
+    username: knowhub
+    password: knowhub123
+
+  # Redis
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis123
+      timeout: 3000ms
+
+  # RabbitMQ
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin123
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        retry:
+          enabled: true
+          max-attempts: 3
+
+  # Spring AI
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY}
+      embedding:
+        options:
+          model: text-embedding-v3
+    vectorstore:
+      pgvector:
+        index-type: ivfflat
+        distance-type: cosine_distance
+        dimensions: 1024
+
+  # Spring Security
+  security:
+    filter:
+      # filter 掉 Tomcat async dispatch 结束时触发的误报
+      dispatcher-types: request, error
+
+# Redisson
+redisson:
+  address: redis://localhost:6379
+  password: redis123
+  database: 0
+
+# MyBatis-Plus
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# 自定义配置
+app:
+  jwt:
+    secret: ${JWT_SECRET:knowhub-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256}
+    expiration: 86400000
+  upload:
+    path: ./uploads
+  rag:
+    chunk-size: 500
+    chunk-overlap: 50
+    top-k: 5
+  cache:
+    kb-list-ttl: 300      # 知识库列表缓存 5分钟
+    doc-list-ttl: 300     # 文档列表缓存 5分钟
+
+# Actuator 暴露给 Prometheus
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    prometheus:
+      enabled: true
+
+logging:
+  level:
+    com.knowhub: debug
+    org.springframework.ai: debug
