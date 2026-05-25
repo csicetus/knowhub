@@ -34,6 +34,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
+    private static final String MESSAGE_ROLE_ASSISTANT = "assistant";
+    private static final String MESSAGE_ROLE_USER = "user";
+    private static final Integer CHAT_HISTORY_LIMIT = 5;
+
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final VectorStore vectorStore;
@@ -73,7 +77,7 @@ public class ChatServiceImpl implements ChatService {
         Message message = Message.builder()
                 .conversationId(finalConversationId)
                 .userId(userId)
-                .role("user")
+                .role(MESSAGE_ROLE_USER)
                 .content(request.getQuestion())
                 .tokensUsed(0)
                 .build();
@@ -89,7 +93,19 @@ public class ChatServiceImpl implements ChatService {
             // 把 SecurityContext 设置到异步线程里
             SecurityContextHolder.setContext(securityContext);
             try {
-                // 1. 向量检索：找和用户问题最相关的 top-k 个文档块
+                // 1. 查找最近 5 条历史消息
+                StringBuilder recentChatHistory = new StringBuilder();
+                List<Message> messageList = getRecentChatHistory(finalConversationId, CHAT_HISTORY_LIMIT);
+                for (int i = messageList.size() - 1; i >= 0; i--) {
+                    Message msg = messageList.get(i);
+                    if (msg.getRole().equals(MESSAGE_ROLE_USER)) {
+                        recentChatHistory.append("User: ").append(msg.getContent()).append("\n");
+                    } else if (msg.getRole().equals(MESSAGE_ROLE_ASSISTANT)) {
+                        recentChatHistory.append("Assistant: ").append(msg.getContent()).append("\n");
+                    }
+                }
+
+                // 2. 向量检索：找和用户问题最相关的 top-k 个文档块
                 FilterExpressionBuilder b = new FilterExpressionBuilder();
                 var filter = b.and(
                         b.eq("knowledgeBaseId", knowledgeBaseId),
@@ -104,12 +120,12 @@ public class ChatServiceImpl implements ChatService {
                                 .build()
                 );
 
-                // 2. 把检索到的文档块拼成上下文字符串
+                // 3. 把检索到的文档块拼成上下文字符串
                 String context  = relatedDocs.stream()
                         .map(Document::getText)
                         .collect(Collectors.joining("\n\n"));
 
-                // 3. 构建 Prompt
+                // 4. 构建 Prompt
                 String prompt = String.format("""
                     你是一个企业知识库助手，请根据以下参考内容回答用户问题。
                     如果参考内容中没有相关信息，请如实告知。
@@ -117,10 +133,13 @@ public class ChatServiceImpl implements ChatService {
                     参考内容：
                     %s
                     
+                    对话历史：
+                    %s
+                    
                     用户问题：%s
-                    """, context , request.getQuestion());
+                    """, context , recentChatHistory, request.getQuestion());
 
-                // 4. 调用 LLM 流式生成答案，同时通过 SSE 推送
+                // 5. 调用 LLM 流式生成答案，同时通过 SSE 推送
                 StringBuilder fullAnswer = new StringBuilder();
 
                 chatClient.prompt(prompt)
@@ -141,17 +160,17 @@ public class ChatServiceImpl implements ChatService {
                         })
                         .blockLast();
 
-                // 5. 保存 assistant 消息到数据库
+                // 6. 保存 assistant 消息到数据库
                 Message assistantMessage = Message.builder()
                         .conversationId(finalConversationId)
                         .userId(userId)
-                        .role("assistant")
+                        .role(MESSAGE_ROLE_ASSISTANT)
                         .content(fullAnswer.toString())
                         .tokensUsed(0)
                         .build();
                 messageMapper.insert(assistantMessage);
 
-                // 6. 发送结束信号
+                // 7. 发送结束信号
                 ChatMessageVO doneVO = new ChatMessageVO();
                 doneVO.setContent("");
                 doneVO.setDone(true);
@@ -196,5 +215,15 @@ public class ChatServiceImpl implements ChatService {
                     return vo;
                 })
                 .collect(Collectors.toList());
+    }
+
+    // 倒序返回前 n 条 message
+    private List<Message> getRecentChatHistory(Long conversationId, int limit) {
+        return messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversationId)
+                        .orderByDesc(Message::getCreatedTime)
+                        .last("LIMIT " + limit)
+        );
     }
 }
