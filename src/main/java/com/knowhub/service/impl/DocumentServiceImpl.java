@@ -96,8 +96,6 @@ public class DocumentServiceImpl implements DocumentService {
             documentVO.setChunkCount(0);    // 异步处理，暂时为0，向量化完成后更新
             documentVO.setCreatedTime(document.getCreatedTime());
 
-            redisTemplate.delete(DOC_LIST_KEY + knowledgeBaseId);
-
             return documentVO;
         } finally {
             if (lock.isHeldByCurrentThread()) {
@@ -148,5 +146,10 @@ public class DocumentServiceImpl implements DocumentService {
                 .chunkCount(chunks.size())
                 .build();
         documentMapper.updateById(document);
+        log.info("文档向量化完成: documentId={}, chunks={}", documentId, chunks.size());
+
+        // 向量化完成后删除文档列表缓存，防止缓存返回旧的 status=1
+        redisTemplate.delete(DOC_LIST_KEY + knowledgeBaseId);
+        log.info("删除文档列表缓存:" + DOC_LIST_KEY + knowledgeBaseId);
     }
 }

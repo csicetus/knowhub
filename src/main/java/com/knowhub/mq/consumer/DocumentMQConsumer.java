@@ -10,11 +10,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 
 @Slf4j
 @Component
@@ -28,6 +31,13 @@ public class DocumentMQConsumer {
     public void handleVectorize(DocumentVectorizeMessage message,
                                 Channel channel,
                                 Message amqpMessage) throws IOException {
+        // 设置 SecurityContext，让多租户插件能取到 userId
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(
+                        message.getUserId(), null, List.of()
+                );
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
         long deliveryTag = amqpMessage.getMessageProperties().getDeliveryTag();
         log.info("收到向量化消息: documentId={}", message.getDocumentId());
 
@@ -58,6 +68,8 @@ public class DocumentMQConsumer {
             // 手动 NACK，requeue=false 表示不重新入队
             // 消息会根据死信配置转发到死信队列
             channel.basicNack(deliveryTag, false, false);
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(auth);
         }
     }
 
