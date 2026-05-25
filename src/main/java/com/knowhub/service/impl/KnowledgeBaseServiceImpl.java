@@ -83,7 +83,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 
         List<KnowledgeBase> knowledgeBases = knowledgeBaseMapper.selectList(
           new LambdaQueryWrapper<KnowledgeBase>()
-                  .eq(KnowledgeBase::getUserId, userId)
                   .orderByDesc(KnowledgeBase::getCreatedTime)
         );
 
@@ -125,7 +124,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         knowledgeBaseValidator.validateAndGet(knowledgeBaseId, userId);
 
         String cacheKey = DOC_LIST_KEY + knowledgeBaseId;
-
         Object cache = redisTemplate.opsForValue().get(cacheKey);
         if (cache != null) {
             try {

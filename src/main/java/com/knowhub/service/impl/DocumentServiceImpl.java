@@ -2,6 +2,8 @@ package com.knowhub.service.impl;
 
 import com.knowhub.common.exception.BusinessException;
 import com.knowhub.mapper.DocumentMapper;
+import com.knowhub.mq.DocumentVectorizeMessage;
+import com.knowhub.mq.sender.DocumentMQSender;
 import com.knowhub.service.DocumentService;
 import com.knowhub.service.KnowledgeBaseValidator;
 import com.knowhub.util.TextChunker;
@@ -18,11 +20,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -33,6 +35,7 @@ public class DocumentServiceImpl implements DocumentService {
     private static final String LOCK_KEY = "lock:doc:upload:";
 
     private final DocumentMapper documentMapper;
+    private final DocumentMQSender documentMQSender;
     private final TextChunker textChunker;
     private final VectorStore vectorStore;
     private final KnowledgeBaseValidator knowledgeBaseValidator;
@@ -46,6 +49,8 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentVO uploadDocument(Long knowledgeBaseId, Long userId, MultipartFile file) {
         String lockKey = LOCK_KEY + knowledgeBaseId + ":" + file.getName();
         RLock lock = redissonClient.getLock(lockKey);
+        lock.lock(10, TimeUnit.SECONDS);
+
         try {
             knowledgeBaseValidator.validateAndGet(knowledgeBaseId, userId);
 
@@ -58,7 +63,8 @@ public class DocumentServiceImpl implements DocumentService {
                 Files.write(filePath, file.getBytes());
             } catch (IOException e) {
                 log.error("文件保存失败: {}", uniqueFileName, e);
-                throw new BusinessException(500, "文件保存失败");        }
+                throw new BusinessException(500, "文件保存失败");
+            }
 
             com.knowhub.entity.Document document = com.knowhub.entity.Document.builder()
                     .knowledgeBaseId(knowledgeBaseId)
@@ -67,26 +73,18 @@ public class DocumentServiceImpl implements DocumentService {
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .filePath(String.valueOf(filePath))
-                    .status(0)
+                    .status(1)
                     .build();
             documentMapper.insert(document);
 
-            int chunkSize;
-            try {
-                String content = parseDocument(file);
-                List<String> chunks = textChunker.chunk(content);
-                chunkSize = chunks.size();
-                generateAndStoreEmbeddings(chunks, document.getId(), knowledgeBaseId, userId);
-                document.setStatus(2);
-                document.setChunkCount(chunkSize);
-                documentMapper.updateById(document);
-            } catch (Exception e) {
-                log.error("文档处理失败: documentId={}", document.getId(), e);
-                document.setStatus(3);
-                document.setErrorMsg(e.getMessage());
-                documentMapper.updateById(document);
-                throw new BusinessException(500, "文档处理失败: " + e.getMessage());
-            }
+            DocumentVectorizeMessage mqMessage = DocumentVectorizeMessage.builder()
+                    .documentId(document.getId())
+                    .knowledgeBaseId(knowledgeBaseId)
+                    .userId(userId)
+                    .fileName(fileName)
+                    .filePath(String.valueOf(filePath))
+                    .build();
+            documentMQSender.sendVectorizeMessage(mqMessage);
 
             DocumentVO documentVO = new DocumentVO();
             documentVO.setId((document.getId()));
@@ -94,8 +92,8 @@ public class DocumentServiceImpl implements DocumentService {
             documentVO.setFileName(uniqueFileName);
             documentVO.setFileType(document.getFileType());
             documentVO.setFileSize(document.getFileSize());
-            documentVO.setStatus(document.getStatus());
-            documentVO.setChunkCount(chunkSize);
+            documentVO.setStatus(1);        // 1=向量化中
+            documentVO.setChunkCount(0);    // 异步处理，暂时为0，向量化完成后更新
             documentVO.setCreatedTime(document.getCreatedTime());
 
             redisTemplate.delete(DOC_LIST_KEY + knowledgeBaseId);
@@ -105,21 +103,6 @@ public class DocumentServiceImpl implements DocumentService {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
-        }
-    }
-
-    @Override
-    public String parseDocument(MultipartFile file) {
-        String fileName = file.getOriginalFilename();
-        if (fileName == null || (!fileName.endsWith(".txt") && !fileName.endsWith(".md"))) {
-            throw new BusinessException(400, "只支持 txt 和 md 格式");
-        }
-
-        try {
-            return new String(file.getBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            log.error("文件读取失败: {}", fileName, e);
-            throw new BusinessException(500, "文件读取失败");
         }
     }
 
@@ -152,5 +135,18 @@ public class DocumentServiceImpl implements DocumentService {
         vectorStore.add(documents);
 
         log.info("文档向量化完成: documentId={}, chunks={}", documentId, chunks.size());
+    }
+
+    @Override
+    public void vectorizeContent(String content, Long documentId, Long knowledgeBaseId, Long userId) {
+        List<String> chunks = textChunker.chunk(content);
+        generateAndStoreEmbeddings(chunks, documentId, knowledgeBaseId, userId);
+
+        com.knowhub.entity.Document document = com.knowhub.entity.Document.builder()
+                .id(documentId)
+                .status(2)
+                .chunkCount(chunks.size())
+                .build();
+        documentMapper.updateById(document);
     }
 }

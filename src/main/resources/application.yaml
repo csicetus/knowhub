@@ -101,7 +101,9 @@ management:
   endpoint:
     prometheus:
       enabled: true
-
+  metrics:
+    tags:
+      application: ${spring.application.name}
 logging:
   level:
     com.knowhub: debug

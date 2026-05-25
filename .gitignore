@@ -42,3 +42,7 @@ uploads/
 # 本地日志
 *.log
 logs/
+
+.env
+
+INTERVIEW.md
