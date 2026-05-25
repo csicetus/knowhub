@@ -53,6 +53,11 @@ spring:
         index-type: ivfflat
         distance-type: cosine_distance
         dimensions: 1024
+    mcp:
+      server:
+        name: knowhub-mcp-server
+        version: 1.0.0
+        type: sync
 
   # Spring Security
   security:
@@ -97,7 +102,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus,info
+        include: health,prometheus,info,mappings
   endpoint:
     prometheus:
       enabled: true

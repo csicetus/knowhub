@@ -32,6 +32,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/sse", "/mcp/message").permitAll()
                         .anyRequest().authenticated()
                 )
                 // 其他所有接口需要登录
