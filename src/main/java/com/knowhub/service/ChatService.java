@@ -8,5 +8,6 @@ import java.util.List;
 
 public interface ChatService {
     SseEmitter handleQuestion(ChatRequest request, Long userId);
+    String askQuestion(Long knowledgeBaseId, Long userId, String question);
     List<ChatMessageVO> getChatHistory(Long conversationId, Long userId);
 }

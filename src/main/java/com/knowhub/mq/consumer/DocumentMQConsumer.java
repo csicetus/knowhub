@@ -69,7 +69,7 @@ public class DocumentMQConsumer {
             // 消息会根据死信配置转发到死信队列
             channel.basicNack(deliveryTag, false, false);
         } finally {
-            SecurityContextHolder.getContext().setAuthentication(auth);
+            SecurityContextHolder.clearContext();
         }
     }
 

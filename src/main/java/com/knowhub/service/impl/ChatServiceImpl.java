@@ -9,15 +9,11 @@ import com.knowhub.mapper.ConversationMapper;
 import com.knowhub.mapper.MessageMapper;
 import com.knowhub.service.ChatService;
 import com.knowhub.service.KnowledgeBaseValidator;
+import com.knowhub.util.RagPromptBuilder;
 import com.knowhub.vo.ChatMessageVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -39,14 +35,11 @@ public class ChatServiceImpl implements ChatService {
     private static final Integer CHAT_HISTORY_LIMIT = 5;
 
     private final ConversationMapper conversationMapper;
-    private final MessageMapper messageMapper;
-    private final VectorStore vectorStore;
     private final ChatClient chatClient;  // Spring AI 的 LLM 调用客户端
-    private final KnowledgeBaseValidator knowledgeBaseValidator;
     private final ExecutorService executor = Executors.newCachedThreadPool();
-
-    @Value("${app.rag.top-k}")
-    private int topK;
+    private final KnowledgeBaseValidator knowledgeBaseValidator;
+    private final MessageMapper messageMapper;
+    private final RagPromptBuilder ragPromptBuilder;
 
     // 主线程立即返回 SseEmitter，建立 SSE 连接
     // 异步线程做耗时的 LLM 调用，每生成一段通过 SSE 推送
@@ -95,7 +88,7 @@ public class ChatServiceImpl implements ChatService {
             try {
                 // 1. 查找最近 5 条历史消息
                 StringBuilder recentChatHistory = new StringBuilder();
-                List<Message> messageList = getRecentChatHistory(finalConversationId, CHAT_HISTORY_LIMIT);
+                List<Message> messageList = getRecentChatHistory(finalConversationId);
                 for (int i = messageList.size() - 1; i >= 0; i--) {
                     Message msg = messageList.get(i);
                     if (msg.getRole().equals(MESSAGE_ROLE_USER)) {
@@ -105,44 +98,11 @@ public class ChatServiceImpl implements ChatService {
                     }
                 }
 
-                // 2. 向量检索：找和用户问题最相关的 top-k 个文档块
-                FilterExpressionBuilder b = new FilterExpressionBuilder();
-                var filter = b.and(
-                        b.eq("knowledgeBaseId", knowledgeBaseId),
-                        b.eq("userId", userId)
-                );
-
-                List<Document> relatedDocs = vectorStore.similaritySearch(
-                        SearchRequest.builder()
-                                .query(request.getQuestion())
-                                .topK(topK)
-                                .filterExpression(filter.build())
-                                .build()
-                );
-
-                // 3. 把检索到的文档块拼成上下文字符串
-                String context  = relatedDocs.stream()
-                        .map(Document::getText)
-                        .collect(Collectors.joining("\n\n"));
-
-                // 4. 构建 Prompt
-                String prompt = String.format("""
-                    你是一个企业知识库助手，请根据以下参考内容回答用户问题。
-                    如果参考内容中没有相关信息，请如实告知。
-                    
-                    参考内容：
-                    %s
-                    
-                    对话历史：
-                    %s
-                    
-                    用户问题：%s
-                    """, context , recentChatHistory, request.getQuestion());
-
-                // 5. 调用 LLM 流式生成答案，同时通过 SSE 推送
+                // 2. 调用 LLM 流式生成答案，同时通过 SSE 推送
                 StringBuilder fullAnswer = new StringBuilder();
 
-                chatClient.prompt(prompt)
+                chatClient.prompt(ragPromptBuilder.buildPrompt(knowledgeBaseId,
+                                userId, request.getQuestion(), recentChatHistory))
                         .stream()
                         .content()
                         .doOnNext(chunk -> {
@@ -160,7 +120,7 @@ public class ChatServiceImpl implements ChatService {
                         })
                         .blockLast();
 
-                // 6. 保存 assistant 消息到数据库
+                // 3. 保存 assistant 消息到数据库
                 Message assistantMessage = Message.builder()
                         .conversationId(finalConversationId)
                         .userId(userId)
@@ -170,7 +130,7 @@ public class ChatServiceImpl implements ChatService {
                         .build();
                 messageMapper.insert(assistantMessage);
 
-                // 7. 发送结束信号
+                // 4. 发送结束信号
                 ChatMessageVO doneVO = new ChatMessageVO();
                 doneVO.setContent("");
                 doneVO.setDone(true);
@@ -187,6 +147,12 @@ public class ChatServiceImpl implements ChatService {
         });
 
         return sseEmitter;
+    }
+
+    @Override
+    public String askQuestion(Long knowledgeBaseId, Long userId, String question) {
+        String prompt = ragPromptBuilder.buildPrompt(knowledgeBaseId, userId, question, new StringBuilder());
+        return chatClient.prompt(prompt).call().content();
     }
 
     private void validateConversation(Long userId, Long conversationId) {
@@ -218,12 +184,12 @@ public class ChatServiceImpl implements ChatService {
     }
 
     // 倒序返回前 n 条 message
-    private List<Message> getRecentChatHistory(Long conversationId, int limit) {
+    private List<Message> getRecentChatHistory(Long conversationId) {
         return messageMapper.selectList(
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, conversationId)
                         .orderByDesc(Message::getCreatedTime)
-                        .last("LIMIT " + limit)
+                        .last("LIMIT " + CHAT_HISTORY_LIMIT)
         );
     }
 }
