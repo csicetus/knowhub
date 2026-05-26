@@ -7,18 +7,19 @@ KnowHub 是一个企业级多租户 AI 知识库平台，支持文档上传、�
 
 ## 技术栈
 
-| 层次 | 技术选型 | 选型理由 |
-|------|---------|---------|
-| 框架 | Java 17 + Spring Boot 3.5 | LTS 版本，生态成熟 |
-| 业务数据库 | MySQL 8.0 + MyBatis-Plus | 关系型数据，行级多租户隔离 |
-| 向量数据库 | PostgreSQL 16 + pgvector | 不需要额外部署，余弦相似度检索 |
-| 缓存 | Redis 7 + Redisson | Cache Aside 缓存，分布式锁 |
-| 消息队列 | RabbitMQ 3.13 | 文档异步向量化，手动 ACK + 死信队列 |
-| AI | Spring AI + 通义千问 | text-embedding-v3 生成向量，qwen-turbo 生成答案 |
-| 认证 | JWT + Spring Security 6 | 无状态认证，前后端分离 |
-| 监控 | Prometheus + Grafana | JVM 指标 + 业务指标可视化 |
-| 文档 | Swagger (springdoc 2.8) | 接口文档，支持 JWT 认证测试 |
-| 基础设施 | Docker Compose | 一键启动所有中间件 |
+| 层次    | 技术选型                      | 选型理由                                   |
+|-------|---------------------------|----------------------------------------|
+| 框架    | Java 17 + Spring Boot 3.5 | LTS 版本，生态成熟                            |
+| 业务数据库 | MySQL 8.0 + MyBatis-Plus  | 关系型数据，行级多租户隔离                          |
+| 向量数据库 | PostgreSQL 16 + pgvector  | 不需要额外部署，余弦相似度检索                        |
+| 缓存    | Redis 7 + Redisson        | Cache Aside 缓存，分布式锁                    |
+| 消息队列  | RabbitMQ 3.13             | 文档异步向量化，手动 ACK + 死信队列                  |
+| AI    | Spring AI + 通义千问          | text-embedding-v3 生成向量，qwen-turbo 生成答案 |
+| MCP Server | Spring AI MCP | 把 KnowHub 能力暴露给 AI 客户端，支持 Claude Desktop/Cursor 调用 |
+| 认证    | JWT + Spring Security 6   | 无状态认证，前后端分离                            |
+| 监控    | Prometheus + Grafana      | JVM 指标 + 业务指标可视化                       |
+| 文档    | Swagger (springdoc 2.8)   | 接口文档，支持 JWT 认证测试                       |
+| 基础设施  | Docker Compose            | 一键启动所有中间件                              |
 
 ## 核心功能
 
@@ -28,9 +29,10 @@ KnowHub 是一个企业级多租户 AI 知识库平台，支持文档上传、�
 - **SSE 流式输出**：打字机效果，异步线程处理 LLM 调用，SecurityContext 跨线程传递
 - **Redis 缓存**：Cache Aside 模式，数据变更主动删缓存，防缓存穿透
 - **AOP 限流**：自定义 @RateLimit 注解，Redisson 令牌桶，问答接口 5次/秒
+- **MCP Tool**：自定义 AI 可以调用的函数例：查知识库列表、文档列表、RAG 问答
 
 ## 架构图
-![knowhub 请求链路图.drawio.png](images/knowhub%20%E8%AF%B7%E6%B1%82%E9%93%BE%E8%B7%AF%E5%9B%BE.drawio.png)
+![knowhub 请求链路图v2.png](images/knowhub%20%E8%AF%B7%E6%B1%82%E9%93%BE%E8%B7%AF%E5%9B%BEv2.png)
 
 ## 快速启动
 
@@ -48,7 +50,7 @@ cd knowhub
 
 # 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，填入 DASHSCOPE_API_KEY 和 JWT_SECRET
+# 编辑 .env，填入 DASHSCOPE_API_KEY 和 JWT_SECRET 和 MCP_API_KEY
 
 # 3. 启动中间件
 docker compose up -d
@@ -62,13 +64,14 @@ mvn spring-boot:run
 ```
 
 ### 访问地址
-| 服务 | 地址 |
-|------|------|
-| API 接口 | http://localhost:8080 |
-| Swagger 文档 | http://localhost:8080/swagger-ui/index.html |
-| RabbitMQ 管理 | http://localhost:15672（admin/admin123）|
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000（admin/admin123）|
+| 服务            | 地址 |
+|---------------|------|
+| API 接口        | http://localhost:8080 |
+| Swagger 文档    | http://localhost:8080/swagger-ui/index.html |
+| RabbitMQ 管理   | http://localhost:15672（admin/admin123）|
+| Prometheus    | http://localhost:9090 |
+| Grafana       | http://localhost:3000（admin/admin123）|
+| MCP Inspector | nodejs 生成 npx @modelcontextprotocol/inspector |
 
 ## 压测数据
 
@@ -81,8 +84,38 @@ mvn spring-boot:run
 | **提升幅度** | **5倍** | **22倍** | - | - |
 
 ## 监控截图
+![knowhub_grafana_1.jpg](images/knowhub_grafana_1.jpg)
+![knowhub_grafana_2.jpg](images/knowhub_grafana_2.jpg)
+![knowhub_grafana_3.jpg](images/knowhub_grafana_3.jpg)
+![knowhub_grafana_4.jpg](images/knowhub_grafana_4.jpg)
 
-[插入 Grafana Dashboard 截图]
+## MCP Server
+
+KnowHub 实现了 MCP Server，把知识库能力暴露给任何支持 MCP 协议的 AI 客户端。
+
+### 暴露的 Tool
+
+| Tool | 描述 |
+|------|------|
+| listKnowledgeBases | 查询指定用户的知识库列表 |
+| listDocuments | 查询指定知识库下的文档列表 |
+| askQuestion | 在指定知识库中进行 RAG 智能问答 |
+
+### 连接方式（MCP Inspector）
+
+1. 运行 `npx @modelcontextprotocol/inspector`
+2. Transport Type 选 SSE，URL 填 `http://localhost:8080/sse`
+3. Authentication 展开，加 Header：
+    - Name: `X-API-Key`
+    - Value: `<你配置的 MCP_API_KEY 环境变量值>`
+4. 点 Connect，在 Tools 里调用
+
+### 认证
+
+MCP 端点通过 API Key 认证，客户端需在请求头加：
+`X-API-Key: <你配置的 MCP_API_KEY 环境变量值>`
+
+![knowhub_mcp_inspector.jpg](images/knowhub_mcp_inspector.jpg)
 
 ## 关键设计决策
 
