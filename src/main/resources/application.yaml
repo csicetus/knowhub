@@ -98,6 +98,8 @@ app:
     doc-list-ttl: 300     # 文档列表缓存 5分钟
   mcp:
     api-key: ${MCP_API_KEY:knowhub-mcp-secret-key}
+  dashscope:
+    rerank-model: gte-rerank
 
 # Actuator 暴露给 Prometheus
 management:
