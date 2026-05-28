@@ -1,6 +1,8 @@
 package com.knowhub.service.impl;
 
 import com.knowhub.common.exception.BusinessException;
+import com.knowhub.es.document.EsDocumentChunk;
+import com.knowhub.es.repository.EsDocumentChunkRepository;
 import com.knowhub.mapper.DocumentMapper;
 import com.knowhub.mq.DocumentVectorizeMessage;
 import com.knowhub.mq.sender.DocumentMQSender;
@@ -36,11 +38,12 @@ public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentMapper documentMapper;
     private final DocumentMQSender documentMQSender;
-    private final TextChunker textChunker;
-    private final VectorStore vectorStore;
+    private final EsDocumentChunkRepository esDocumentChunkRepository;
     private final KnowledgeBaseValidator knowledgeBaseValidator;
     private final RedissonClient redissonClient;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final TextChunker textChunker;
+    private final VectorStore vectorStore;
 
     @Value("${app.upload.path}")
     private String uploadBasePath;
@@ -139,6 +142,22 @@ public class DocumentServiceImpl implements DocumentService {
         // 向量化完成后删除文档列表缓存，防止缓存返回旧的 status=1
         redisTemplate.delete(DOC_LIST_KEY + knowledgeBaseId);
         log.info("删除文档列表缓存: {}", DOC_LIST_KEY + knowledgeBaseId);
+
+        // 向量化完成后将 chunk 存入 ES
+        List<EsDocumentChunk> esChunks = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            EsDocumentChunk esChunk = EsDocumentChunk.builder()
+                    .id(documentId + "_" + i)
+                    .knowledgeBaseId(knowledgeBaseId)
+                    .userId(userId)
+                    .documentId(documentId)
+                    .content(chunks.get(i))
+                    .chunkIndex(i)
+                    .build();
+            esChunks.add(esChunk);
+        }
+        esDocumentChunkRepository.saveAll(esChunks);
+        log.info("chunk 写入 ES 完成: documentId={}, chunks={}", documentId, esChunks.size());
     }
 
     private DocumentVO buildDocumentDO(Long knowledgeBaseId,

@@ -64,6 +64,8 @@ spring:
     filter:
       # filter 掉 Tomcat async dispatch 结束时触发的误报
       dispatcher-types: request, error
+  elasticsearch:
+    uris: http://localhost:9200
 
 # Redisson
 redisson:
@@ -113,6 +115,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+  health:
+    elasticsearch:
+      enabled: false
 logging:
   level:
     com.knowhub: debug
