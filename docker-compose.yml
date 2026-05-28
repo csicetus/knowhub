@@ -103,6 +103,18 @@ services:
     ports:
       - "9200:9200"
 
+  canal-server:
+    image: canal/canal-server:v1.1.7
+    container_name: knowhub-canal
+    ports:
+      - "11111:11111"
+    environment:
+      - canal.instance.master.address=knowhub-mysql:3306
+      - canal.instance.dbUsername=canal
+      - canal.instance.dbPassword=canal123
+      - canal.instance.filter.regex=knowhub_mysql\\.document
+    depends_on:
+      - mysql
 volumes:
   mysql_data:
   postgres_data:

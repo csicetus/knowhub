@@ -176,6 +176,13 @@
 			<artifactId>spring-boot-starter-data-elasticsearch</artifactId>
 		</dependency>
 
+		<!-- ===== Canal ===== -->
+		<dependency>
+			<groupId>top.javatool</groupId>
+			<artifactId>canal-spring-boot-starter</artifactId>
+			<version>1.2.1-RELEASE</version>
+		</dependency>
+
 		<!-- ===== tools ===== -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>

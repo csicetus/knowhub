@@ -84,6 +84,11 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
+# Canal
+canal:
+  server: localhost:11111
+  destination: example
+
 # 自定义配置
 app:
   jwt:

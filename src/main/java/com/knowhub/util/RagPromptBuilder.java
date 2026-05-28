@@ -1,15 +1,18 @@
 package com.knowhub.util;
 
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.knowhub.es.document.EsDocumentChunk;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -22,7 +25,7 @@ import java.util.stream.Collectors;
 public class RagPromptBuilder {
 
     private final DashScopeApi dashScopeApi;
-    private final JdbcTemplate vectorJdbcTemplate;
+    private final ElasticsearchOperations elasticsearchOperations;
     private final VectorStore vectorStore;
 
     @Value("${app.dashscope.rerank-model}")
@@ -32,30 +35,30 @@ public class RagPromptBuilder {
     private int topK;
 
     public RagPromptBuilder(
-            @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
+            ElasticsearchOperations elasticsearchOperations,
             DashScopeApi dashScopeApi,
             VectorStore vectorStore) {
+        this.elasticsearchOperations = elasticsearchOperations;
         this.dashScopeApi = dashScopeApi;
-        this.vectorJdbcTemplate = vectorJdbcTemplate;
         this.vectorStore = vectorStore;
     }
 
     /*
-    * ===== 两阶段检索 (Retrieve)
-    * 阶段一：召回 (Recall) - 找到尽量多的相关文档
-    * 向量检索：把问题转成 Embedding，再 pgvector 里找语义类似的文档块
-    * 全文检索：用 PostgreSQL 全文索引找包含关键词的文档块
-    * 两边各取 topK * 4，保证召回率
-    *
-    * 阶段二：精排 (Rank) - 从召回结果里挑出最相关的
-    * RRF 融合：合并两路结果，同时出现在两路的文档排名更高
-    * Rerank: 用专门的相关模型（gte-rerank）对候选文档重新打分排序
+     * ===== 两阶段检索 (Retrieve)
+     * 阶段一：召回 (Recall) - 找到尽量多的相关文档
+     * 向量检索：把问题转成 Embedding，再 pgvector 里找语义类似的文档块
+     * 全文检索：用 ES match query 找包含关键词的文档块，支持中英文分词
+     * 两边各取 topK * 4，保证召回率
+     *
+     * 阶段二：精排 (Rank) - 从召回结果里挑出最相关的
+     * RRF 融合：合并两路结果，同时出现在两路的文档排名更高
+     * Rerank: 用专门的相关模型（gte-rerank）对候选文档重新打分排序
      *         比向量相似度更准确，最终取 topK 个
      *
      * ===== 生成（Generate） =====
      * 把 topK 个文档块拼成 context，加上对话历史，构建 Prompt 给 LLM
      * LLM 基于 context 生成答案，减少幻觉
-    */
+     */
     public String buildPrompt(Long knowledgeBaseId,
                               Long userId,
                               String question,
@@ -97,40 +100,17 @@ public class RagPromptBuilder {
 
         // 6. 构建 Prompt
         return String.format("""
-                    你是一个企业知识库助手，请根据以下参考内容回答用户问题。
-                    如果参考内容中没有相关信息，请如实告知。
-                    
-                    参考内容：
-                    %s
-                    
-                    对话历史：
-                    %s
-                    
-                    用户问题：%s
-                    """, context , recentChatHistory, question);
-    }
-
-    private List<Document> fullTextSearch(Long knowledgeBaseId,
-                                          Long userId,
-                                          String question,
-                                          int limit) {
-        String sqlQuery = """
-            SELECT content, metadata,
-                   ts_rank(to_tsvector('english', content),
-                           plainto_tsquery('english', ?)) as rank
-            FROM vector_store
-            WHERE to_tsvector('english', content) @@ plainto_tsquery('english', ?)
-              AND metadata->>'userId' = ?
-              AND metadata->>'knowledgeBaseId' = ?
-            ORDER BY rank DESC
-            LIMIT ?
-            """;
-
-        List<Map<String, Object>> rows = vectorJdbcTemplate.queryForList(sqlQuery,
-                question, question, userId.toString(), knowledgeBaseId.toString(), limit);
-        return rows.stream()
-                .map(row -> new Document((String) row.get("content")))
-                .collect((Collectors.toList()));
+                你是一个企业知识库助手，请根据以下参考内容回答用户问题。
+                如果参考内容中没有相关信息，请如实告知。
+                
+                参考内容：
+                %s
+                
+                对话历史：
+                %s
+                
+                用户问题：%s
+                """, context, recentChatHistory, question);
     }
 
     /**
@@ -194,5 +174,37 @@ public class RagPromptBuilder {
             log.error("Rerank API 调用失败，降级为原始顺序: {}", e.getMessage());
             return candidates.subList(0, Math.min(topN, candidates.size()));
         }
+    }
+
+    private List<Document> fullTextSearch(Long knowledgeBaseId,
+                                          Long userId,
+                                          String question,
+                                          int limit) {
+        Query query = NativeQuery.builder()
+                .withQuery(q -> q
+                        .bool(b -> b
+                                // 全文检索：content 包含用户问题
+                                .must(m -> m
+                                        .match(mt -> mt
+                                                .field("content")
+                                                .query(question)))
+                                // 精确过滤：只搜当前知识库
+                                .filter(f -> f.term(t -> t
+                                        .field("knowledgeBaseId")
+                                        .value(knowledgeBaseId)))
+                                // 精确过滤：只搜当前用户
+                                .filter(f -> f.term(t -> t
+                                        .field("userId")
+                                        .value(userId)))
+                        )
+                )
+                .withMaxResults(limit)
+                .build();
+
+        SearchHits<EsDocumentChunk> hits = elasticsearchOperations.search(query, EsDocumentChunk.class);
+
+        return hits.stream()
+                .map(hit -> new Document(hit.getContent().getContent()))
+                .collect(Collectors.toList());
     }
 }
