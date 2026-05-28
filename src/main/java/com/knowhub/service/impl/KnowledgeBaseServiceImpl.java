@@ -147,7 +147,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             return Collections.emptyList();
         }
 
-        List<DocumentVO> voList = toDocumentVO(documents);
+        List<DocumentVO> voList = buildDocumentVOList(documents);
         try {
             redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(voList), 3, TimeUnit.MINUTES);
         } catch (JsonProcessingException e) {
@@ -157,7 +157,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         return voList;
     }
 
-    private List<DocumentVO> toDocumentVO(List<Document> documents) {
+    private List<DocumentVO> buildDocumentVOList(List<Document> documents) {
         return documents.stream()
                 .map(doc -> {
                     DocumentVO vo = new DocumentVO();

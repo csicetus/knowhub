@@ -86,17 +86,7 @@ public class DocumentServiceImpl implements DocumentService {
                     .build();
             documentMQSender.sendVectorizeMessage(mqMessage);
 
-            DocumentVO documentVO = new DocumentVO();
-            documentVO.setId((document.getId()));
-            documentVO.setKnowledgeBaseId(knowledgeBaseId);
-            documentVO.setFileName(uniqueFileName);
-            documentVO.setFileType(document.getFileType());
-            documentVO.setFileSize(document.getFileSize());
-            documentVO.setStatus(1);        // 1=向量化中
-            documentVO.setChunkCount(0);    // 异步处理，暂时为0，向量化完成后更新
-            documentVO.setCreatedTime(document.getCreatedTime());
-
-            return documentVO;
+            return buildDocumentDO(knowledgeBaseId, uniqueFileName, document);
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -131,8 +121,6 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         vectorStore.add(documents);
-
-        log.info("文档向量化完成: documentId={}, chunks={}", documentId, chunks.size());
     }
 
     @Override
@@ -150,6 +138,22 @@ public class DocumentServiceImpl implements DocumentService {
 
         // 向量化完成后删除文档列表缓存，防止缓存返回旧的 status=1
         redisTemplate.delete(DOC_LIST_KEY + knowledgeBaseId);
-        log.info("删除文档列表缓存:" + DOC_LIST_KEY + knowledgeBaseId);
+        log.info("删除文档列表缓存: {}", DOC_LIST_KEY + knowledgeBaseId);
+    }
+
+    private DocumentVO buildDocumentDO(Long knowledgeBaseId,
+                                       String uniqueFileName,
+                                       com.knowhub.entity.Document document) {
+        DocumentVO documentVO = new DocumentVO();
+        documentVO.setId((document.getId()));
+        documentVO.setKnowledgeBaseId(knowledgeBaseId);
+        documentVO.setFileName(uniqueFileName);
+        documentVO.setFileType(document.getFileType());
+        documentVO.setFileSize(document.getFileSize());
+        documentVO.setStatus(1);        // 1=向量化中
+        documentVO.setChunkCount(0);    // 异步处理，暂时为0，向量化完成后更新
+        documentVO.setCreatedTime(document.getCreatedTime());
+
+        return documentVO;
     }
 }

@@ -1,5 +1,6 @@
 package com.knowhub.mq.consumer;
 
+import com.knowhub.common.exception.BusinessException;
 import com.knowhub.entity.Document;
 import com.knowhub.mapper.DocumentMapper;
 import com.knowhub.mq.DocumentVectorizeMessage;
@@ -8,12 +9,16 @@ import com.knowhub.service.DocumentService;
 import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -43,7 +48,13 @@ public class DocumentMQConsumer {
 
         try {
             // 1. 从磁盘读取文件内容
-            String content = Files.readString(Paths.get(message.getFilePath()));
+            String content;
+            String filePath = message.getFilePath();
+            if (message.getFileName().endsWith(".pdf")) {
+                content = getContentFromPDF(filePath);
+            } else {
+                content = Files.readString(Paths.get(filePath));
+            }
 
             // 2. 调用向量化（复用 DocumentService 里的方法）
             // 这里直接调用 generateAndStoreEmbeddings
@@ -70,6 +81,19 @@ public class DocumentMQConsumer {
             channel.basicNack(deliveryTag, false, false);
         } finally {
             SecurityContextHolder.clearContext();
+        }
+    }
+
+    /**
+     * 用 Apache PDFBox 从 PDF 文件中提取纯文本内容
+     * PDFTextStripper 会按页顺序提取所有文字，忽略图片和表格
+     */
+    private String getContentFromPDF(String filePath) {
+        try (PDDocument document = Loader.loadPDF(new File(filePath))) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            return stripper.getText(document);
+        } catch (IOException e) {
+            throw new BusinessException(500, "PDF文件提取失败: " + e.getMessage());
         }
     }
 

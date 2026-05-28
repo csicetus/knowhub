@@ -163,6 +163,13 @@
             <scope>runtime</scope>
         </dependency>
 
+		<!-- ===== PDF support ===== -->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+
 		<!-- ===== tools ===== -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
