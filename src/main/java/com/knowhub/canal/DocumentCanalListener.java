@@ -3,11 +3,12 @@ package com.knowhub.canal;
 import com.knowhub.entity.Document;
 import com.knowhub.es.document.EsDocument;
 import com.knowhub.es.repository.EsDocumentRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import top.javatool.canal.client.annotation.CanalTable;
-import top.javatool.canal.client.handler.EntryHandler;
+import org.xiaowu.behappy.canal.client.annotation.CanalTable;
+import org.xiaowu.behappy.canal.client.handler.EntryHandler;
 
 @Slf4j
 @CanalTable("document")
@@ -16,6 +17,11 @@ import top.javatool.canal.client.handler.EntryHandler;
 public class DocumentCanalListener implements EntryHandler<Document> {
 
     private final EsDocumentRepository esDocumentRepository;
+
+    @PostConstruct
+    public void init() {
+        log.info("DocumentCanalListener 已注册，开始监听 document 表");
+    }
 
     @Override
     public void insert(Document document) {

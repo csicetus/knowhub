@@ -108,11 +108,8 @@ services:
     container_name: knowhub-canal
     ports:
       - "11111:11111"
-    environment:
-      - canal.instance.master.address=knowhub-mysql:3306
-      - canal.instance.dbUsername=canal
-      - canal.instance.dbPassword=canal123
-      - canal.instance.filter.regex=knowhub_mysql\\.document
+    volumes:
+      - ./canal-instance.properties:/home/admin/canal-server/conf/example/instance.properties
     depends_on:
       - mysql
 volumes:

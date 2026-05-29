@@ -178,9 +178,9 @@
 
 		<!-- ===== Canal ===== -->
 		<dependency>
-			<groupId>top.javatool</groupId>
-			<artifactId>canal-spring-boot-starter</artifactId>
-			<version>1.2.1-RELEASE</version>
+			<groupId>io.github.behappy-project</groupId>
+			<artifactId>behappy-canal-spring-boot-starter</artifactId>
+			<version>3.0.3</version>
 		</dependency>
 
 		<!-- ===== tools ===== -->
