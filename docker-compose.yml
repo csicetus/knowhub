@@ -57,6 +57,7 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: knowhub-rabbitmq
+    hostname: knowhub-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: admin123

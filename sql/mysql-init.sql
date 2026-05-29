@@ -73,3 +73,8 @@ CREATE TABLE IF NOT EXISTS `message` (
     KEY `idx_conversation_id` (`conversation_id`),
     KEY `idx_user_id_created` (`user_id`, `created_time`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话消息表';
+
+-- Canal 用户，用于 binlog 监听
+CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'canal123';
+GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'canal'@'%';
+FLUSH PRIVILEGES;
