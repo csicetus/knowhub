@@ -12,6 +12,8 @@ KnowHub 是一个企业级多租户 AI 知识库平台，支持文档上传、�
 | 框架    | Java 17 + Spring Boot 3.5 | LTS 版本，生态成熟                            |
 | 业务数据库 | MySQL 8.0 + MyBatis-Plus  | 关系型数据，行级多租户隔离                          |
 | 向量数据库 | PostgreSQL 16 + pgvector  | 不需要额外部署，余弦相似度检索                        |
+| 搜索引擎 | Elasticsearch 8.13 | 全文检索，BM25 算法，替代 pgvector SQL |
+| 数据同步 | Canal 1.1.7 | 监听 MySQL binlog，同步 document 元数据到 ES |
 | 缓存    | Redis 7 + Redisson        | Cache Aside 缓存，分布式锁                    |
 | 消息队列  | RabbitMQ 3.13             | 文档异步向量化，手动 ACK + 死信队列                  |
 | AI    | Spring AI + 通义千问          | text-embedding-v3 生成向量，qwen-turbo 生成答案 |
@@ -32,7 +34,7 @@ KnowHub 是一个企业级多租户 AI 知识库平台，支持文档上传、�
 - **MCP Tool**：自定义 AI 可以调用的函数例：查知识库列表、文档列表、RAG 问答
 
 ## 架构图
-![knowhub 请求链路图v2.png](images/knowhub%20%E8%AF%B7%E6%B1%82%E9%93%BE%E8%B7%AF%E5%9B%BEv2.png)
+![knowhub 请求链路图v3.png](images/knowhub%20%E8%AF%B7%E6%B1%82%E9%93%BE%E8%B7%AF%E5%9B%BEv3.png)
 
 ## 快速启动
 
@@ -72,6 +74,7 @@ mvn spring-boot:run
 | Prometheus    | http://localhost:9090 |
 | Grafana       | http://localhost:3000（admin/admin123）|
 | MCP Inspector | nodejs 生成 npx @modelcontextprotocol/inspector |
+| Elasticsearch | http://localhost:9200 |
 
 ## 压测数据
 
@@ -137,3 +140,9 @@ PostgreSQL + pgvector 提供这三者，两个数据库职责不同，不能互�
 改为 RabbitMQ 异步化后，上传立即返回 status=1，后台处理完更新 status=2。
 手动 ACK 保证消息不丢失，死信队列处理反复失败的消息。
 
+### 为什么引入 ES 替换 pgvector 全文检索
+pgvector 的 to_tsvector 对中文支持很差，按字切分，搜索质量低。
+ES 的 standard 分词器对英文效果好，后续可以加 IK 分词器支持中文。
+BM25 算法比 pgvector 的 ts_rank 相关性评分更准确。
+Canal 监听 MySQL binlog 实现 document 元数据实时同步到 ES，
+是大厂常用的 MySQL → ES 数据同步方案。
