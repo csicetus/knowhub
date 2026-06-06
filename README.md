@@ -3,7 +3,7 @@
 ## 项目简介
 
 KnowHub 是一个企业级多租户 AI 知识库平台，支持文档上传、智能向量化存储和 RAG 智能问答。
-用户可上传 txt/md 文档，系统自动解析分块、生成 Embedding 存入向量数据库，通过自然语言提问获得基于文档内容的精准回答，支持 SSE 流式输出打字机效果。
+用户可上传 txt/pdf/md 文档，系统自动解析分块、生成 Embedding 存入向量数据库，生成 Embedding 存入向量数据库，通过混合检索（pgvector 向量检索 + ES 全文检索 BM25）经 RRF 融合和 Rerank 精排，获得基于文档内容的精确回答，支持 SSE 流式输出打字机效果。
 
 ## 技术栈
 
@@ -27,7 +27,7 @@ KnowHub 是一个企业级多租户 AI 知识库平台，支持文档上传、�
 
 - **多租户隔离**：MyBatis-Plus TenantLineInnerInterceptor 自动加 user_id 过滤，防止跨租户数据泄露
 - **文档异步向量化**：上传立即返回，RabbitMQ 后台异步处理，手动 ACK + 死信队列保证可靠性
-- **RAG 智能问答**：文档分块 → Embedding → pgvector 相似检索 → Prompt 构建 → LLM 流式生成
+- **RAG 智能问答**：文档分块 → Embedding → 混合检索（pgvector 相似检索 + ES BM25）→ RRF 融合 → Rerank 精排 → Prompt 构建 → LLM 流式生成
 - **SSE 流式输出**：打字机效果，异步线程处理 LLM 调用，SecurityContext 跨线程传递
 - **Redis 缓存**：Cache Aside 模式，数据变更主动删缓存，防缓存穿透
 - **AOP 限流**：自定义 @RateLimit 注解，Redisson 令牌桶，问答接口 5次/秒
