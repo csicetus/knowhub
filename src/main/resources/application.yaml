@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: knowhub
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
 
   # MySQL
   datasource:
@@ -113,7 +117,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus,info,mappings
+        include: health,prometheus
   endpoint:
     prometheus:
       enabled: true
