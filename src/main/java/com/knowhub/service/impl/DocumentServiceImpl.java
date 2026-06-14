@@ -1,9 +1,12 @@
 package com.knowhub.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.knowhub.common.exception.BusinessException;
+import com.knowhub.entity.KnowledgeBase;
 import com.knowhub.es.document.EsDocumentChunk;
 import com.knowhub.es.repository.EsDocumentChunkRepository;
 import com.knowhub.mapper.DocumentMapper;
+import com.knowhub.mapper.KnowledgeBaseMapper;
 import com.knowhub.mq.DocumentVectorizeMessage;
 import com.knowhub.mq.sender.DocumentMQSender;
 import com.knowhub.service.DocumentService;
@@ -34,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 public class DocumentServiceImpl implements DocumentService {
 
     private static final String DOC_LIST_KEY = "doc:list:kbId:";
+    private static final String KB_LIST_KEY = "kb:list:userId:";
     private static final String LOCK_KEY = "lock:doc:upload:";
 
     private final DocumentMapper documentMapper;
@@ -44,6 +48,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final TextChunker textChunker;
     private final VectorStore vectorStore;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
 
     @Value("${app.upload.path}")
     private String uploadBasePath;
@@ -88,6 +93,10 @@ public class DocumentServiceImpl implements DocumentService {
                     .filePath(String.valueOf(filePath))
                     .build();
             documentMQSender.sendVectorizeMessage(mqMessage);
+
+            // 更新知识库中文档数量，并删除缓存内旧知识库信息
+            knowledgeBaseMapper.incrementDocCount(knowledgeBaseId);
+            redisTemplate.delete(KB_LIST_KEY + userId);
 
             return buildDocumentDO(knowledgeBaseId, uniqueFileName, document);
         } finally {

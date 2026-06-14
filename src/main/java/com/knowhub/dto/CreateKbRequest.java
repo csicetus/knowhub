@@ -11,5 +11,6 @@ public class CreateKbRequest {
     @Size(min = 1, max = 100, message = "知识库名长度1-100位")
     private String name;
 
+    @Size(max = 500, message = "描述不能超过500字")
     private String description;
 }
